@@ -47,3 +47,6 @@ rule Reveal_ltk:
 --[ Reveal($A) ]->
 [ Out(ltkA) ]
 ```
+
+2) Aliveness Authentication: We claim that a protocol guarantees the aliveness of another agent B to an initiator A if, whenever A (as initiator) completes a run of the protocol, ostensibly with responder B, then B had previously run the protocol.
+It's worth noting that B may not have realized he was running the protocol with A. Also, it's possible that B hasn't executed the procedure in a while. Even this rudimentary kind of authentication is a challenge for many systems. This is due to an intruder performing a mirror attack, merely reflecting an agent's messages back at himself in a number of circumstances.
