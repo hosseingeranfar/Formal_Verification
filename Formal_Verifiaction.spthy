@@ -1,0 +1,363 @@
+
+/*
+*  Author: Hossein Geranfar
+*  Model Name: Formal Verification
+*  Status: DEVELOPMENTAL
+*
+* 
+*/
+
+theory Formal_Verification
+begin
+
+builtins: hashing, xor, bilinear-pairing 
+functions: mul/2
+
+
+
+/****** System Setup ******/
+
+rule Setup:
+    []
+    --[OnlyOnce('Setup')]->
+    [!Entity($V, $A, $S)]
+
+
+
+
+// Public key infrastructure
+
+rule Register_pk:
+
+   let
+
+   pub_key_V = mul(~Sv,'P')
+   pub_key_A = mul(~Sa,'P')
+   pub_key_S = mul(~Ss,'P')
+
+   in
+[ !Entity(V, A, S),
+   Fr(~Sv), Fr(~Sa), Fr(~Ss),Fr(~k)
+, Fr(~ID_V),Fr(~ID_A),Fr(~ID_S) ]
+--[OnlyOnce('Initialization'),
+   Neq(~ID_V, ~ID_A),
+   Neq(~ID_A, ~ID_S),
+   Neq(~ID_V, ~ID_S),
+   Neq(~Sv,~Sa),
+   Neq(~Sa,~Ss),
+   Neq(~Sv,~Ss),
+   Init('Done'),
+   Privacy(~ID_V)
+]->
+[ !Ltk(V, ~Sv, ~k)
+, !Pk(V, pub_key_V)
+,!Ltk(A, ~Sa, ~k)
+, !Pk(A, pub_key_A)
+,!Ltk(S, ~Ss, ~k)
+, !Pk(S, pub_key_S)
+, !V_ID(V,~ID_V)
+, !A_ID(A,~ID_A)
+,!S_ID(S,~ID_S)
+,V_Init(V,~ID_V, A, ~ID_A, S, ~ID_S, ~k, ~Sv )
+,A_Init(A,~ID_A, V, ~ID_V, S, ~ID_S, ~k, ~Sa )
+,S_Init(S,~ID_S, V, ~ID_V, A, ~ID_A, ~k, ~Ss )
+, Out(pub_key_V)
+, Out(pub_key_A)
+, Out(pub_key_S)
+]
+
+rule Reveal_ltk_V:
+[ !Ltk(V, Sv, k) ] --[ Reveal(V) ]-> [ Out(Sv) ]
+
+rule Reveal_ltk_A:
+[ !Ltk(A, Sa, k) ] --[ Reveal(A) ]-> [ Out(Sa) ]
+
+rule Reveal_ltk_S:
+[ !Ltk(S, Ss, k) ] --[ Reveal(S) ]-> [ Out(Ss) ]
+
+
+
+// Role V initiate protocol, sends m1
+rule V_1_Sends_m1:
+   let
+      V1=mul(~Nv,'P')
+      V2=mul(~Nv,pub_key_A)
+      PIDV=(<ID_V,k>) XOR V2
+      V3=h(<PIDV, V2, ~T1>) 
+      m1=<PIDV,V1,V3,~T1> 
+   in
+   [In(pub_key_A)
+    ,V_Init(V,ID_V, A, ID_A, S, ID_S, k, Sv )
+          ,Fr(~Nv), Fr(~T1)  ]
+   --[OnlyOnce('V_1'), Send(V, m1), Running(V,A,m1), Secret(~Nv), Honest(V), Honest(A), Role('V')  ]->
+   [St_V_1(V,ID_V,A, ID_A, S, ID_S, k, Sv, pub_key_A, m1, ~Nv, V1)
+   ,Out(m1)  ]
+
+
+
+// Role A receives first message sends m2
+rule A_1_Sends_m2:
+
+      
+      let
+         
+         V2=mul(Sa,V1)
+         Auth1=PIDV XOR V2
+         A1=mul(~Na,V1)
+         A2=mul(~Na,'P')
+         A3=mul(~Na,pub_key_S)
+         PIDA1=<ID_A,ID_V,k> XOR A3
+         A4=h(PIDA1,V1,A1,A3,~T2)
+         m1=<PIDV,V1,V3,T1>
+         m2=<PIDA1,A1,A2,A4,V1,~T2>
+      in
+
+[A_Init(A,ID_A, V, ID_V, S, ID_S, k, Sa ),
+    In(pub_key_S)
+, In(m1) 
+, Fr(~Na)
+,  Fr(~T2)
+]
+--[Eq(Auth1, <ID_V,k>), OnlyOnce('A_1'), Authentic(V,m1), Secret(~Na), Commit(A,V,m1), Recv(A, m1), Send(A, m2)
+, Honest(A), Honest(V), Role('A')
+]->
+[   St_A_1(A, ID_A, V, ID_V, S, ID_S, ~Na, k, pub_key_S, m2, A1, A2, A3, V1, Sa)
+, Out(m2)
+]
+
+
+
+// Role S receives first message sends m3
+rule S_1_send_m3:
+
+      
+      let
+         A3=mul(Ss,A2)
+         Auth2=PIDA1 XOR A3
+         S1=mul(~Ns,V1)
+         S2=mul(~Ns,A1)
+         S3=mul(~Ns,'P')
+         S4=mul(~Ns,pub_key_A)
+         PIDS=<ID_S,ID_A,ID_V, k> XOR S4
+         S5=h(<PIDS,A1,S1,S4,~T3>)
+         Ks=mul(~Ns,A1)
+         SKas1=h(<V1,A1,S1,Ks,A3>)
+         m2=<PIDA1,A1,A2,A4,V1,T2>
+         m3=<PIDS,S1,S2,S3,S5,~T3>
+      in
+
+[S_Init(S,ID_S, V, ID_V, A, ID_A, k, Ss )
+, In(m2) 
+,In(pub_key_A)
+, Fr(~Ns),  Fr(~T3)
+]
+--[Eq(Auth2,(<ID_A,ID_V,k>)), OnlyOnce('S_1'),Authentic(A,m2), Commit(S,A,m2),
+Server_Aggregator_Aggrement(S,A,SKas1),Running(S,A,SKas1),Secret(Ks), Secret(~Ns),
+ Recv(S, m2), Send(S,m3)
+, Honest(S), Honest(A), Role('S')
+]->
+[St_S_1(S, ID_S, k, pub_key_A, A,m3, SKas1)
+   ,  Out(m3)
+]
+
+// Role A receives m3, sends m4
+rule A_receive_m3_send_m4:
+
+let
+  m3=<PIDS,S1,S2,S3,S5,T3> 
+  S4=mul(Sa,S3)
+  Auth3=PIDS XOR S4
+  Ka=mul(Na,S1)
+  SKas2=h(<V1,A1,S1,Ka,A3>)
+  A5=mul(Na,pub_key_V)
+  PIDA2=<ID_A,ID_V,ID_S,k> XOR A5
+  A6=h(<PIDA2,A1,S1,A5,~T4>)
+  SKav1=h(<V1,A1,S1,Ka,A5>)
+  m4=<PIDA2,A1,A2,A6,~T4,S1,S2>
+in
+   [St_A_1(A, ID_A, V, ID_V, S, ID_S, Na, k, pub_key_S, m2, A1, A2, A3, V1, Sa)
+           ,In(pub_key_V)
+   ,In(m3)
+   ,Fr(~T4)  ]
+   --[Eq(Auth3,<ID_S,ID_A,ID_V,k>), OnlyOnce('A_2'),Authentic(S,m3),Secret(SKas2),Send(A,m4),
+   Aggregator_Server_Aggrement(A,S,SKas2), Aggregator_Vehicle_Aggreement(A,V,SKav1),
+   Commit(A,S,m3), Recv(A, m3), Send(A,m4)
+      , Honest(A), Honest(V), Role('A')  ]->
+   [St_A_2(A, ID_A, S, k, pub_key_S, m4, SKas2)
+   ,Out(m4) ]
+
+
+// Role V receives m4 terminate
+rule V_receive_m4_termimnate:
+
+let
+   m4=<PIDA2,A1,A2,A6,T4,S1,S2>
+   A5=mul(Sv,A2)
+   Auth4= PIDA2 XOR A5
+   Kv=mul(Nv,S2)
+   SKav2=h(<V1,A1,S1,Kv,A5>)
+
+in
+   [St_V_1(V,ID_V,A, ID_A, S, ID_S, k, Sv, pub_key_A, m1, Nv, V1)
+   ,In(m4)  ]
+   --[Eq(Auth4,<ID_A,ID_V,ID_S,k>), OnlyOnce('V_2'),Commit(V,A,m4),
+   Vehicle_Aggregator_Aggreement(V,A,SKav2),
+       Recv(V, m4)
+      , Honest(V), Honest(A), Role('V')  ]->
+   [St_V_2(V, ID_V, S, k, Sv, pub_key_A, A, 'Done') ]
+
+
+//************************************************************
+// Restriction Lemmas
+//************************************************************
+//Equality Restriction
+restriction Equality:
+    "All x y #i . Eq(x,y) @#i ==> x=y"
+
+//Only Once Restriction
+restriction OnlyOnce:
+	"
+	All x #i #j . OnlyOnce(x) @ i & OnlyOnce(x) @ j ==> #i = #j
+	"
+// Inequality Restriction  
+   restriction Inequality:
+   "All x y #i. Neq(x,y) @i ==> not(x = y)
+   "   
+
+//*************************************************************
+
+//************************************************************
+// Protocol Executability Check Lemma
+//************************************************************
+
+lemma key_agreement_possible_check:
+    exists-trace
+    "Ex V S A SKas1 SKas2 SKav1 SKav2 #i #j #k #l . 
+    Init('Done') @#i & Server_Aggregator_Aggrement(S,A,SKas1)  @#j &  Aggregator_Server_Aggrement(A,S,SKas2)@#k
+    & Aggregator_Vehicle_Aggreement(A,V,SKav1) @#k & Vehicle_Aggregator_Aggreement(V,A,SKav2) @#l  "
+
+
+//*************************************************************
+
+//************************************************************
+// Security Lemmas
+//************************************************************   
+
+lemma Man_in_the_middle: 
+"
+  All V A S SKav1 SKav2 SKas1 SKas2 #i #j #k #l .
+   (Server_Aggregator_Aggrement(S, A, SKas1) @ #i &
+    Aggregator_Server_Aggrement(A, S, SKas2) @j &
+    Aggregator_Vehicle_Aggreement(A,V,SKav1) @k &
+    Vehicle_Aggregator_Aggreement(V, A, SKav2) @ #l &
+    
+    #i < #j  &
+    #j < #k  &
+    #k < #l  &
+
+    not(V= A)&
+    not(A= S)&
+    not(V= S)
+    )
+   ==> not(Ex #m. K(SKas1) @ #m)
+    | not(Ex #n. K(SKas2) @ #n) 
+    | not(Ex #o. K(SKav1) @ #o)
+    | not(Ex #p. K(SKas2) @ #p)"
+
+
+    lemma message_authentication_V_A:
+   "All V m1 #i. Authentic(V,m1) @i
+   ==> (Ex m1 #j. Send(V,m1) @j & j<i)
+   | (Ex V #r. Reveal(V)@r & Honest(V) @i & r < i)"   
+
+   lemma message_authentication_A_S:
+   "All A m2 #i. Authentic(A,m2) @i
+   ==> (Ex m2 #j. Send(A,m2) @j & j<i)
+   | (Ex A #r. Reveal(A)@r & Honest(A) @i & r < i)"  
+   
+   lemma message_authentication_S_A:
+   "All S m3 #i. Authentic(S,m3) @i
+   ==> (Ex m3 #j. Send(S,m3) @j & j<i)
+   | (Ex S #r. Reveal(S)@r & Honest(S) @i & r < i)"
+
+   lemma message_authentication_A_V:
+   "All A m4 #i. Authentic(A,m4) @i
+   ==> (Ex m4 #j. Send(A,m4) @j & j<i)
+   | (Ex A #r. Reveal(A)@r & Honest(A) @i & r < i)"
+
+    lemma aliveness_V_A:
+    "All A V m1 #i.
+    Commit(A,V,m1)@i
+    ==> (Ex  #j. Init('Done') @ j)
+    | (Ex V #r. Reveal(V) @ r & Honest(V) @ i)"
+
+    lemma aliveness_A_S:
+    "All S A m2 #i.
+    Commit(S,A,m2)@i
+    ==> (Ex  #j. Init('Done') @ j)
+    | (Ex A #r. Reveal(A) @ r & Honest(A) @ i)"
+
+    lemma aliveness_S_A:
+    "All A S m3 #i.
+    Commit(A,S,m3)@i
+    ==> (Ex  #j. Init('Done') @ j)
+    | (Ex S #r. Reveal(S) @ r & Honest(S) @ i)"
+
+    lemma aliveness_A_V:
+    "All V A m4 #i.
+    Commit(V,A,m4)@i
+    ==> (Ex  #j. Init('Done') @ j)
+    | (Ex A #r. Reveal(A) @ r & Honest(A) @ i)"
+
+
+
+
+
+//Temporary key Ks generated by Server
+lemma Ks_secrecy:
+    "(All S A m2 Ks  #i1 #i2 #i3 #i4. Secret(Ks) @i1 &
+    Init('Done') @i2 &
+    Send(A, m2) @i3 &
+    Recv(S, m2) @i4 
+     ==>
+    (not Ex #j. K(Ks)@#j))"
+
+    //Temporary key Ka generated by Aggregator
+lemma Ka_secrecy:
+"(All S A m3 Ka  #i1 #i2 #i3 #i4. Secret(Ka) @i1 &
+Init('Done') @i2 &
+Send(S, m3) @i3 &
+Recv(A, m3) @i4 
+ ==>
+(not Ex #j. K(Ka)@#j))"
+
+//Temporary key Kv generated by Vehicle
+lemma Kv_secrecy:
+"(All V A m4 Kv  #i1 #i2 #i3 #i4. Secret(Kv) @i1 &
+Init('Done') @i2 &
+Send(A, m4) @i3 &
+Recv(V, m4) @i4 
+==>
+(not Ex #j. K(Kv)@#j))"
+
+
+
+
+
+
+
+
+/*
+lemma secrecy_PFS:
+"All SKas1 #i.
+Secret(SKas1) @i ==>
+not (Ex #j. K(SKas1)@j)
+| (Ex S #r. Reveal(S)@r & Honest(S) @i & r < i)"
+
+
+lemma user_anonymity: //user anonymity
+    "(All ID_V  #i1 #i2 . Init('Done') @#i1 & Privacy(ID_V) @#i2 
+     ==>
+    (not Ex #j. K(ID_V)@#j))"
+    */
+end
