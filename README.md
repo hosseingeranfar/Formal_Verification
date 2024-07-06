@@ -9,6 +9,7 @@ For detailed installation instructions and usage guidelines, refer to [Chapter 2
 
 ## How to run the code
 `Formal_Verifiaction.spthy`: Contains our protocol's Tamarin Prover source code. 
+
 Then run the model via the command line tool:
 
 `tamarin-prover interactive Formal_Verifiaction.spthy`
