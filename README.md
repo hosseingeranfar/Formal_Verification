@@ -1,4 +1,4 @@
-# The protocol's Tamarin Prover Code 
+# Formal security verification using Tamarin Prover
 
 ## Overview
 
